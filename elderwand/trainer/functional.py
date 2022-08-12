@@ -3,6 +3,7 @@ from typing import Callable, Optional
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+
 from .hooks import TrainingMetrics
 
 
@@ -16,7 +17,7 @@ def train_one_epoch(
     device: torch.device,
     hook: Optional[Callable[[TrainingMetrics], TrainingMetrics]] = None,
 ) -> list[TrainingMetrics]:
-    """Train one epoch of the GAN.
+    """Train one epoch of the GAN model on the given data loader and return the metrics.
 
     Args:
         dataloader (DataLoader): Dataloader for the training data.
@@ -26,8 +27,8 @@ def train_one_epoch(
         discriminator_optimizer (optim.Optimizer): The optimizer for the discriminator.
         generator_optimizer (optim.Optimizer): The optimizer for the generator.
         device (torch.device): The device to use for training.
-        hook (Optional[Callable[[TrainingMetrics], None]], optional): A hook to call
-            after each batch with the metric as arguments. Defaults to None.
+        hook (Optional[Callable[[TrainingMetrics], TrainingMetrics]], optional): A hook
+            to call after each batch with the metric as arguments. Defaults to None.
 
     Returns:
         list[TrainingMetrics]: The list of metrics for each batch.
