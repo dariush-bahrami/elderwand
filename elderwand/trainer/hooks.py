@@ -112,10 +112,10 @@ class TQDMHook:
         Returns:
             TrainingMetrics: Unchanged metrics of the current mini-batch.
         """
-        self.iteration += 1
+        self._iteration += 1
         postfix = []
-        for key in self.name_mapper:
-            name = self.name_mapper[key]
+        for key in self._name_mapper:
+            name = self._name_mapper[key]
             value = mini_batch_metrics._asdict()[key]
             postfix.append(f"{name} = {value:.2f}")
         self.progress_bar.set_postfix_str(", ".join(postfix))
