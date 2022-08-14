@@ -52,8 +52,3 @@ class Generator(nn.Module):
 
     def sample_noise(self, batch_size: int) -> torch.Tensor:
         return torch.randn(batch_size, self.latent_dim, 1, 1)
-
-    @torch.no_grad()
-    def generate(self, batch_size: int) -> torch.Tensor:
-        self.eval()
-        return self(self.sample_noise(batch_size))
