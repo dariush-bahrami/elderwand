@@ -62,7 +62,7 @@ class WDCGAN:
         tensorboard_log_dir: Path,
         image_sample_interval: int = 16,
         image_sample_size: int = 16,
-        critic_train_per_batch: int = 5,
+        critic_train_per_batch: int = 1,
         generator_train_per_batch: int = 1,
         gradient_penalty_weight: float = 10.0,
         adam_optimizer_learning_rate=0.0002,
