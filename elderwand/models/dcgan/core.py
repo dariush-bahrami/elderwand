@@ -4,7 +4,7 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-from ...trainer.applications.vision import VisionGANTrainer
+from ...trainer.applications.vision import VanilaTrainer
 from .discriminator import Discriminator
 from .generator import Generator
 from typing import Sequence
@@ -65,7 +65,7 @@ class DCGAN:
         adam_optimizer_learning_rate=0.0002,
         adam_optimizer_learning_beta_1=0.5,
         adam_optimizer_learning_beta_2=0.999,
-    ) -> VisionGANTrainer:
+    ) -> VanilaTrainer:
         lr = adam_optimizer_learning_rate
         beta1 = adam_optimizer_learning_beta_1
         beta2 = adam_optimizer_learning_beta_2
@@ -79,14 +79,12 @@ class DCGAN:
             lr=lr,
             betas=(beta1, beta2),
         )
-        criterion = nn.BCEWithLogitsLoss()
-        return VisionGANTrainer(
+        return VanilaTrainer(
             dataloader=dataloader,
             generator=self.generator,
             discriminator=self.discriminator,
             generator_optimizer=generator_optimizer,
             discriminator_optimizer=discriminator_optimizer,
-            criterion=criterion,
             device=self.device,
             tensorboard_log_dir=tensorboard_log_dir,
             image_sample_interval=image_sample_interval,
