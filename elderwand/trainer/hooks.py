@@ -3,19 +3,17 @@
 In this module, the common training hooks are defined.
 """
 import math
-from typing import Callable, NamedTuple
+from typing import Callable, Optional, Sequence
 
+import torch
+from torch import nn
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-
-class TrainingMetrics(NamedTuple):
-    discriminator_output_on_real_data: float
-    discriminator_output_on_fake_data: float
-    discriminator_loss: float
-    generator_loss: float
+from .metrics import TrainingMetrics
 
 
-class DiscriminatorSigmoidApplierHook:
+class SigmoidApplierHook:
     """Apply sigmoid function to discriminator output
 
     When using BCEWithLogitsLoss the output of the discriminator is not outputed from
@@ -23,17 +21,14 @@ class DiscriminatorSigmoidApplierHook:
     of the discriminator.
     """
 
-    def __init__(self, epsilon: float = 1e-8):
+    def __init__(self, metrics_to_apply: Sequence[str], epsilon: float = 1e-8):
         """Class constructor
 
         Args:
             epsilon (float, optional): A small number to avoid division by zero.
                 Defaults to 1e-8.
         """
-        self._metrics_to_apply: list[str] = [
-            "discriminator_output_on_real_data",
-            "discriminator_output_on_fake_data",
-        ]
+        self._metrics_to_apply = metrics_to_apply
         self._sigmoid: Callable = lambda x: 1 / (1 + math.exp(-x) + epsilon)
 
     def __call__(self, mini_batch_metrics: TrainingMetrics) -> TrainingMetrics:
@@ -45,13 +40,11 @@ class DiscriminatorSigmoidApplierHook:
         Returns:
             TrainingMetrics: Updated metrics of the current mini-batch.
         """
-        updated_metrics = {}
-        for key, value in mini_batch_metrics._asdict().items():
-            if key not in self._metrics_to_apply:
-                updated_metrics[key] = value
-            else:
-                updated_metrics[key] = self._sigmoid(value)
-        return TrainingMetrics(**updated_metrics)
+        for metric in self._metrics_to_apply:
+            mini_batch_metrics.metrics[metric] = self._sigmoid(
+                mini_batch_metrics.metrics[metric]
+            )
+        return mini_batch_metrics
 
 
 class MetricsAggregatorHook:
@@ -61,13 +54,8 @@ class MetricsAggregatorHook:
         metrics (dict): Dictionary of metrics.
     """
 
-    def __init__(self):
-        self.metrics: dict[str, list[float]] = {
-            "discriminator_output_on_real_data": [],
-            "discriminator_output_on_fake_data": [],
-            "discriminator_loss": [],
-            "generator_loss": [],
-        }
+    def __init__(self, metric_names: Sequence[str]):
+        self.metrics = {metric: [] for metric in metric_names}
 
     def __call__(self, mini_batch_metrics: TrainingMetrics) -> TrainingMetrics:
         """Store metrics and return them unchanged
@@ -78,8 +66,9 @@ class MetricsAggregatorHook:
         Returns:
             TrainingMetrics: Unchanged metrics of the current mini-batch.
         """
-        for key, value in mini_batch_metrics._asdict().items():
-            self.metrics[key].append(value)
+        batch_average_metrics = mini_batch_metrics.average()
+        for key in self.metrics:
+            self.metrics[key].append(batch_average_metrics[key])
         return mini_batch_metrics
 
 
@@ -90,18 +79,21 @@ class TQDMHook:
         progress_bar (tqdm): Progress bar to update.
     """
 
-    def __init__(self, progress_bar: tqdm):
+    def __init__(
+        self,
+        progress_bar: tqdm,
+        metrics_to_print: Sequence[str],
+        name_mapper: Optional[dict] = None,
+    ):
         """Class constructor
 
         Args:
             progress_bar (tqdm): Progress bar to update.
         """
         self.progress_bar = progress_bar
+        self.metrics_to_print = metrics_to_print
+        self.name_mapper = name_mapper if name_mapper else {}
         self._iteration = 0
-        self._name_mapper = {
-            "discriminator_output_on_real_data": "D(x)",
-            "discriminator_output_on_fake_data": "D(G(z))",
-        }
 
     def __call__(self, mini_batch_metrics: TrainingMetrics) -> TrainingMetrics:
         """Update progress bar and return unchanged metrics
@@ -114,11 +106,25 @@ class TQDMHook:
         """
         self._iteration += 1
         postfix = []
-        for key in self._name_mapper:
-            name = self._name_mapper[key]
-            value = mini_batch_metrics._asdict()[key]
+        average_metrics = mini_batch_metrics.average()
+        for key in self.metrics_to_print:
+            name = self.name_mapper.get(key, key)
+            value = average_metrics[key]
             postfix.append(f"{name} = {value:.2f}")
         self.progress_bar.set_postfix_str(", ".join(postfix))
+        return mini_batch_metrics
+
+
+class TensorBoardHook:
+    def __init__(self, writer: SummaryWriter):
+        self.iteration = 0
+        self.writer = writer
+
+    def __call__(self, mini_batch_metrics: TrainingMetrics) -> TrainingMetrics:
+        self.iteration += 1
+        average_metrics = mini_batch_metrics.average()
+        for key, value in average_metrics.items():
+            self.writer.add_scalar(key, value, self.iteration)
         return mini_batch_metrics
 
 
