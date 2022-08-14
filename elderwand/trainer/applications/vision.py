@@ -9,7 +9,6 @@ from tqdm import tqdm
 
 from .. import functional as functional_trainers
 from .. import hooks
-from ..base import Trainer
 from ..metrics import TrainingMetrics
 
 
@@ -104,7 +103,7 @@ class WGANTrainer:
             )
 
 
-class VanilaTrainer(Trainer):
+class VanilaTrainer:
     def __init__(
         self,
         dataloader: DataLoader,
