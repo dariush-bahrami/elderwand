@@ -1,1 +1,1 @@
-from .vision import VisionGANTrainer
+from .vision import WGANTrainer
