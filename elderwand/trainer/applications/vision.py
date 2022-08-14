@@ -7,11 +7,13 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 from tqdm import tqdm
 
-from ..functional import train_one_epoch
+from .. import functional as functional_trainers
 from .. import hooks
+from ..base import Trainer
+from ..metrics import TrainingMetrics
 
 
-class TensorBoardHook:
+class TensorBoardVisionHook(hooks.TensorBoardHook):
     def __init__(
         self,
         writer: SummaryWriter,
@@ -19,17 +21,14 @@ class TensorBoardHook:
         fixed_noise: torch.Tensor,
         image_sample_interval: int,
     ):
-        self.iteration = 0
-        self.writer = writer
         self.generator = generator
-        self.image_sample_interval = image_sample_interval
         self.fixed_noise = fixed_noise
+        self.image_sample_interval = image_sample_interval
+        self._iteration = 0
+        super().__init__(writer)
 
-    def __call__(self, mini_batch_metrics: hooks.TrainingMetrics):
-        self.iteration += 1
-        for key, value in mini_batch_metrics._asdict().items():
-            self.writer.add_scalar(key, value, self.iteration)
-        if self.iteration % self.image_sample_interval == 0:
+    def __call__(self, mini_batch_metrics: TrainingMetrics):
+        if self._iteration % self.image_sample_interval == 0:
             with torch.no_grad():
                 fake = self.generator(self.fixed_noise).cpu()
             fake = make_grid(
@@ -39,9 +38,73 @@ class TensorBoardHook:
                 normalize=True,
             )
             self.writer.add_image("generated_images", fake, self.iteration)
+        self._iteration += 1
+        return super().__call__(mini_batch_metrics)
 
 
-class VisionGANTrainer:
+class WGANTrainer:
+    def __init__(
+        self,
+        dataloader: DataLoader,
+        generator: nn.Module,
+        critic: nn.Module,
+        generator_optimizer: optim.Optimizer,
+        critic_optimizer: optim.Optimizer,
+        device: torch.device,
+        critic_train_per_batch: int,
+        generator_train_per_batch: int,
+        gradient_penalty_weight: float,
+        tensorboard_log_dir: Path,
+        image_sample_interval: int,
+        image_sample_size: int,
+    ):
+        self.dataloader = dataloader
+        self.critic = critic
+        self.generator = generator
+        self.critic_optimizer = critic_optimizer
+        self.generator_optimizer = generator_optimizer
+        self.device = device
+        self.critic_train_per_batch = critic_train_per_batch
+        self.generator_train_per_batch = generator_train_per_batch
+        self.gradient_penalty_weight = gradient_penalty_weight
+        self.metrics_aggregator_hook = hooks.MetricsAggregatorHook(
+            functional_trainers.wasserstein.METRICS
+        )
+        self.tensorboard_hook = TensorBoardVisionHook(
+            SummaryWriter(tensorboard_log_dir),
+            self.generator,
+            self.generator.sample_noise(image_sample_size).to(device),
+            image_sample_interval,
+        )
+        self.tqdm_metrics_to_print = ["critic_loss", "generator_loss"]
+
+    @property
+    def metrics(self):
+        return self.metrics_aggregator_hook.metrics
+
+    def train(self, epochs: int) -> None:
+        progress_bar = tqdm(range(epochs), desc="Training")
+        hook = hooks.ChainedHooks(
+            self.metrics_aggregator_hook,
+            hooks.TQDMHook(progress_bar, metrics_to_print=self.tqdm_metrics_to_print),
+            self.tensorboard_hook,
+        )
+        for epoch in progress_bar:
+            metrics = functional_trainers.wasserstein.train_one_epoch(
+                self.dataloader,
+                self.generator,
+                self.critic,
+                self.generator_optimizer,
+                self.critic_optimizer,
+                self.critic_train_per_batch,
+                self.generator_train_per_batch,
+                self.gradient_penalty_weight,
+                self.device,
+                hook,
+            )
+
+
+class VanilaTrainer(Trainer):
     def __init__(
         self,
         dataloader: DataLoader,
@@ -49,21 +112,21 @@ class VisionGANTrainer:
         discriminator: nn.Module,
         generator_optimizer: optim.Optimizer,
         discriminator_optimizer: optim.Optimizer,
-        criterion: nn.Module,
         device: torch.device,
         tensorboard_log_dir: Path,
         image_sample_interval: int,
         image_sample_size: int,
     ):
-        self.dataloader = dataloader
-        self.discriminator = discriminator
-        self.generator = generator
-        self.criterion = criterion
-        self.discriminator_optimizer = discriminator_optimizer
-        self.generator_optimizer = generator_optimizer
-        self.device = device
+        super().__init__(
+            dataloader,
+            generator,
+            discriminator,
+            generator_optimizer,
+            discriminator_optimizer,
+            device,
+        )
         self.metrics_aggregator_hook = hooks.MetricsAggregatorHook()
-        self.tensorboard_hook = TensorBoardHook(
+        self.tensorboard_hook = TensorBoardVisionHook(
             SummaryWriter(tensorboard_log_dir),
             self.generator,
             self.generator.sample_noise(image_sample_size).to(device),
@@ -74,22 +137,5 @@ class VisionGANTrainer:
     def metrics(self):
         return self.metrics_aggregator_hook.metrics
 
-    def train(self, epochs: int) -> None:
-        progress_bar = tqdm(range(epochs), desc="Training")
-        hook = hooks.ChainedHooks(
-            hooks.DiscriminatorSigmoidApplierHook(),
-            self.metrics_aggregator_hook,
-            hooks.TQDMHook(progress_bar),
-            self.tensorboard_hook,
-        )
-        for epoch in progress_bar:
-            metrics = train_one_epoch(
-                self.dataloader,
-                self.generator,
-                self.discriminator,
-                self.generator_optimizer,
-                self.discriminator_optimizer,
-                self.criterion,
-                self.device,
-                hook,
-            )
+    def train(self, epochs: int, **kwargs) -> None:
+        raise NotImplementedError()
