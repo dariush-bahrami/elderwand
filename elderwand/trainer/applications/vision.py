@@ -116,25 +116,48 @@ class VanilaTrainer:
         image_sample_interval: int,
         image_sample_size: int,
     ):
-        super().__init__(
-            dataloader,
-            generator,
-            discriminator,
-            generator_optimizer,
-            discriminator_optimizer,
-            device,
+        self.dataloader = dataloader
+        self.discriminator = discriminator
+        self.generator = generator
+        self.discriminator_optimizer = discriminator_optimizer
+        self.generator_optimizer = generator_optimizer
+        self.device = device
+        self.metrics_aggregator_hook = hooks.MetricsAggregatorHook(
+            functional_trainers.vanila.METRICS
         )
-        self.metrics_aggregator_hook = hooks.MetricsAggregatorHook()
         self.tensorboard_hook = TensorBoardVisionHook(
             SummaryWriter(tensorboard_log_dir),
             self.generator,
             self.generator.sample_noise(image_sample_size).to(device),
             image_sample_interval,
         )
+        self.tqdm_metrics_to_print = ["discriminator_loss", "generator_loss"]
+        self.sigmoid_applier_hook = hooks.SigmoidApplierHook(
+            [
+                "discriminator_output_on_real_data",
+                "discriminator_output_on_fake_data",
+            ]
+        )
 
     @property
     def metrics(self):
         return self.metrics_aggregator_hook.metrics
 
-    def train(self, epochs: int, **kwargs) -> None:
-        raise NotImplementedError()
+    def train(self, epochs: int) -> None:
+        progress_bar = tqdm(range(epochs), desc="Training")
+        hook = hooks.ChainedHooks(
+            self.sigmoid_applier_hook,
+            self.metrics_aggregator_hook,
+            hooks.TQDMHook(progress_bar, metrics_to_print=self.tqdm_metrics_to_print),
+            self.tensorboard_hook,
+        )
+        for epoch in progress_bar:
+            metrics = functional_trainers.vanila.train_one_epoch(
+                self.dataloader,
+                self.generator,
+                self.discriminator,
+                self.generator_optimizer,
+                self.discriminator_optimizer,
+                self.device,
+                hook,
+            )
