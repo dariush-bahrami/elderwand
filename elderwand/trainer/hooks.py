@@ -41,8 +41,8 @@ class SigmoidApplierHook:
             TrainingMetrics: Updated metrics of the current mini-batch.
         """
         for metric in self._metrics_to_apply:
-            mini_batch_metrics.metrics[metric] = self._sigmoid(
-                mini_batch_metrics.metrics[metric]
+            mini_batch_metrics.metrics[metric][-1] = self._sigmoid(
+                mini_batch_metrics.metrics[metric][-1]
             )
         return mini_batch_metrics
 
