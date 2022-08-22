@@ -24,20 +24,24 @@ def _train_critic(
     fake_data = generator(noise).detach()
 
     # Compute critic loss
-    #   Calculate gradient norm w.r.t. the mixture of real and fake input data
-    epsilon = torch.rand_like(real_data).to(device)
-    mixed_data = epsilon * real_data.to(device) + (1 - epsilon) * fake_data
-    mixed_data.requires_grad_(True)
-    critic_output_mixed = critic(mixed_data)
-    gradient = torch.autograd.grad(
-        outputs=critic_output_mixed,
-        inputs=mixed_data,
-        grad_outputs=torch.ones_like(critic_output_mixed),
-        create_graph=True,
-        retain_graph=True,
-    )[0]
-    gradient_norm = torch.flatten(gradient, start_dim=1).norm(p=2, dim=1)
-    gradient_penalty = torch.mean((gradient_norm - 1) ** 2)
+    if gradient_penalty_weight != 0:
+        epsilon = torch.rand_like(real_data).to(device)
+        mixed_data = epsilon * real_data.to(device) + (1 - epsilon) * fake_data
+        mixed_data.requires_grad_(True)
+        critic_output_mixed = critic(mixed_data)
+        # Calculate gradient norm w.r.t. the mixture of real and fake input data
+        gradient = torch.autograd.grad(
+            outputs=critic_output_mixed,
+            inputs=mixed_data,
+            grad_outputs=torch.ones_like(critic_output_mixed),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+        gradient_norm = torch.flatten(gradient, start_dim=1).norm(p=2, dim=1)
+        gradient_penalty = torch.mean((gradient_norm - 1) ** 2)
+        gradient_penalty_term = gradient_penalty_weight * gradient_penalty
+    else:
+        gradient_penalty_term = 0
 
     #   Calculate the wasserstein loss
     critic_output_real = critic(real_data)
@@ -45,7 +49,7 @@ def _train_critic(
     wasserstein_loss = (
         -torch.mean(critic_output_real)
         + torch.mean(critic_output_fake)
-        + gradient_penalty_weight * gradient_penalty
+        + gradient_penalty_term
     )
 
     # Backpropagate and optimize
