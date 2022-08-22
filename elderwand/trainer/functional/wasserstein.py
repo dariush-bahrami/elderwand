@@ -6,6 +6,14 @@ from torch.utils.data import DataLoader
 
 from ..metrics import TrainingMetrics
 
+METRICS = [
+    "critic_output_on_real_data",
+    "critic_output_on_fake_data",
+    "critic_loss",
+    "generator_loss",
+    "critic_gradient_norm",
+]
+
 
 def _train_critic(
     critic: nn.Module,
@@ -89,15 +97,6 @@ def _train_generator(
         "loss": generator_loss.item(),
         "critic_output_on_fake_data": critic_output_fake.mean().item(),
     }
-
-
-METRICS = [
-    "critic_output_on_real_data",
-    "critic_output_on_fake_data",
-    "critic_loss",
-    "generator_loss",
-    "critic_gradient_norm",
-]
 
 
 def train_one_epoch(
