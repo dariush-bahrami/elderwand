@@ -2,9 +2,17 @@ from typing import Callable, Optional
 
 import torch
 from torch import nn, optim
-from torch.utils.data import DataLoader
 from torch.nn import functional as F
+from torch.utils.data import DataLoader
+
 from ..hooks import TrainingMetrics
+
+METRICS = [
+    "discriminator_output_on_real_data",
+    "discriminator_output_on_fake_data",
+    "discriminator_loss",
+    "generator_loss",
+]
 
 
 def train_one_epoch(
@@ -36,7 +44,7 @@ def train_one_epoch(
 
     real_label = 1
     fake_label = 0
-    metrics = []
+    metrics = TrainingMetrics(metric_names=METRICS)
     for real_data in dataloader:
         real_data = real_data.to(device)
         batch_size = real_data.size(0)
@@ -69,15 +77,16 @@ def train_one_epoch(
         loss_g_z.backward()
         generator_optimizer.step()
 
-        mini_batch_metrics = TrainingMetrics(
-            discriminator_output_on_real_data=d_x.mean().item(),
-            discriminator_output_on_fake_data=d_g_z_1.mean().item(),
-            discriminator_loss=loss_d_x.item() + loss_d_g_z_1.item(),
-            generator_loss=loss_g_z.item(),
+        metrics.append_metric("discriminator_output_on_real_data", d_x.mean().item())
+        metrics.append_metric(
+            "discriminator_output_on_fake_data", d_g_z_1.mean().item()
         )
-
-        metrics.append(mini_batch_metrics)
+        metrics.append_metric(
+            "discriminator_loss", loss_d_x.item() + loss_d_g_z_1.item()
+        )
+        metrics.append_metric("generator_loss", loss_g_z.item())
 
         if hook is not None:
-            hook(mini_batch_metrics)
+            metrics = hook(metrics)
+
     return metrics
